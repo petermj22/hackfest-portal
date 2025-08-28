@@ -11,6 +11,12 @@ function App() {
         window.productionCheck = productionCheck;
         console.log('💡 Production check available: productionCheck.runProductionCheck()');
       });
+
+      // Make webhook tester available globally
+      import('./utils/webhookTester').then(({ webhookTester }) => {
+        window.webhookTester = webhookTester;
+        console.log('💡 Webhook tester available: webhookTester.testCompleteWebhookFlow(baseUrl)');
+      });
     }
   }, []);
 
