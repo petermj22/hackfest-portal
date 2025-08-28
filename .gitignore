@@ -6,3 +6,9 @@ package-lock.json
 .vscode/
 .idea/
 vite.config.*s.*
+
+# Environment files with secrets
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
