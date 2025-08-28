@@ -1,55 +1,53 @@
 import { supabase } from '../lib/supabase';
 import { teamService } from '../services/teamService';
-import razorpayService from '../services/razorpayService';
+import { cashfreeService } from '../services/cashfreeService';
 
 export const paymentDebugger = {
-  // Check Razorpay configuration
-  async checkRazorpayConfig() {
-    console.log('🔍 Checking Razorpay Configuration...');
-    
+  // Check Cashfree configuration
+  async checkCashfreeConfig() {
+    console.log('🔍 Checking Cashfree Configuration...');
+
     const results = {
-      envKey: null,
-      keyFormat: false,
+      appId: null,
+      environment: null,
       scriptLoaded: false,
-      razorpayObject: false
+      cashfreeObject: false
     };
 
-    // Check environment variable
-    results.envKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
-    console.log('Environment Key:', results.envKey);
+    // Check environment variables
+    results.appId = import.meta.env.VITE_CASHFREE_APP_ID;
+    results.environment = import.meta.env.VITE_CASHFREE_ENV || 'TEST';
+    console.log('Cashfree App ID:', results.appId ? results.appId.substring(0, 8) + '...' : 'Not configured');
+    console.log('Cashfree Environment:', results.environment);
 
-    // Validate key format
-    if (results.envKey) {
-      results.keyFormat = results.envKey.startsWith('rzp_test_') || results.envKey.startsWith('rzp_live_');
-      console.log('Key Format Valid:', results.keyFormat);
-      
-      if (results.envKey.startsWith('rzp_live_')) {
-        // Check if we're in development environment
-        const isDevelopment = window.location.hostname === 'localhost' ||
-                             window.location.hostname.includes('dev') ||
-                             window.location.hostname.includes('127.0.0.1');
+    // Validate configuration
+    if (results.appId) {
+      console.log('✅ Cashfree App ID configured');
 
-        if (isDevelopment) {
-          console.warn('⚠️ Using LIVE Razorpay key in development - consider using test key for safety');
+      if (results.environment === 'PROD') {
+        const isProduction = window.location.hostname !== 'localhost' &&
+                           !window.location.hostname.includes('dev') &&
+                           !window.location.hostname.includes('127.0.0.1');
+
+        if (!isProduction) {
+          console.warn('⚠️ Using PROD environment in development - consider using TEST for safety');
         } else {
-          console.log('✅ Using LIVE Razorpay key for production environment');
+          console.log('✅ Using PROD environment for production');
         }
-      } else if (results.envKey.startsWith('rzp_test_')) {
-        console.log('✅ Using TEST Razorpay key - good for development');
       } else {
-        console.error('❌ Invalid Razorpay key format');
+        console.log('✅ Using TEST environment - good for development');
       }
     } else {
-      console.error('❌ VITE_RAZORPAY_KEY_ID not found in environment');
+      console.error('❌ VITE_CASHFREE_APP_ID not found in environment');
     }
 
-    // Check if Razorpay script is loaded
-    results.scriptLoaded = !!document.querySelector('script[src*="checkout.razorpay.com"]');
-    console.log('Razorpay Script Loaded:', results.scriptLoaded);
+    // Check if Cashfree script is loaded
+    results.scriptLoaded = !!document.querySelector('script[src*="sdk.cashfree.com"]');
+    console.log('Cashfree Script Loaded:', results.scriptLoaded);
 
-    // Check if Razorpay object is available
-    results.razorpayObject = typeof window.Razorpay !== 'undefined';
-    console.log('Razorpay Object Available:', results.razorpayObject);
+    // Check if Cashfree object is available
+    results.cashfreeObject = typeof window.Cashfree !== 'undefined';
+    console.log('Cashfree Object Available:', results.cashfreeObject);
 
     return results;
   },
@@ -280,7 +278,7 @@ export const paymentDebugger = {
 
       console.log('Order data:', orderData);
 
-      const result = await razorpayService.createOrder(orderData);
+      const result = await cashfreeService.createOrder(orderData);
       
       if (result.error) {
         console.error('❌ Order creation failed:', result.error);

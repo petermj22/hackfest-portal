@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { teamService } from '../services/teamService';
-import razorpayService from '../services/razorpayService';
+import { cashfreeService } from '../services/cashfreeService';
 
 export const paymentFailureAnalyzer = {
   // Analyze specific payment failure
@@ -51,12 +51,12 @@ export const paymentFailureAnalyzer = {
       analysis.severity = 'critical';
     }
     
-    else if (errorMessage.includes('Razorpay') || errorMessage.includes('razorpay')) {
-      analysis.errorType = 'razorpay_config';
-      analysis.rootCause = 'Razorpay configuration or script loading issue';
+    else if (errorMessage.includes('Cashfree') || errorMessage.includes('cashfree')) {
+      analysis.errorType = 'cashfree_config';
+      analysis.rootCause = 'Cashfree configuration or SDK loading issue';
       analysis.solutions = [
-        'Check Razorpay key configuration',
-        'Verify Razorpay script loads properly',
+        'Check Cashfree App ID configuration',
+        'Verify Cashfree SDK loads properly',
         'Disable ad blockers',
         'Check network connectivity'
       ];
@@ -95,14 +95,15 @@ export const paymentFailureAnalyzer = {
   },
 
   async testEnvironment() {
-    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
+    const cashfreeAppId = import.meta.env.VITE_CASHFREE_APP_ID;
+    const cashfreeEnv = import.meta.env.VITE_CASHFREE_ENV;
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    
+
     return {
-      razorpayKey: !!razorpayKey,
-      razorpayKeyFormat: razorpayKey && (razorpayKey.startsWith('rzp_live_') || razorpayKey.startsWith('rzp_test_')),
+      cashfreeAppId: !!cashfreeAppId,
+      cashfreeEnv: !!cashfreeEnv,
       supabaseUrl: !!supabaseUrl,
-      status: razorpayKey && supabaseUrl ? 'pass' : 'fail'
+      status: cashfreeAppId && supabaseUrl ? 'pass' : 'fail'
     };
   },
 
@@ -200,22 +201,22 @@ export const paymentFailureAnalyzer = {
     }
   },
 
-  async testRazorpay() {
-    const scriptLoaded = !!document.querySelector('script[src*="checkout.razorpay.com"]');
-    const objectAvailable = typeof window.Razorpay !== 'undefined';
-    
+  async testCashfree() {
+    const scriptLoaded = !!document.querySelector('script[src*="sdk.cashfree.com"]');
+    const objectAvailable = typeof window.Cashfree !== 'undefined';
+
     // Test script loading
     if (!scriptLoaded) {
       try {
-        await razorpayService.initializeRazorpay();
+        await cashfreeService.initializeCashfree();
       } catch (error) {
         return { scriptLoaded: false, objectAvailable: false, status: 'fail', error };
       }
     }
 
     return {
-      scriptLoaded: !!document.querySelector('script[src*="checkout.razorpay.com"]'),
-      objectAvailable: typeof window.Razorpay !== 'undefined',
+      scriptLoaded: !!document.querySelector('script[src*="sdk.cashfree.com"]'),
+      objectAvailable: typeof window.Cashfree !== 'undefined',
       status: (scriptLoaded && objectAvailable) ? 'pass' : 'partial'
     };
   },
@@ -281,9 +282,9 @@ export const paymentFailureAnalyzer = {
       recommendations.push('Check database connectivity and permissions');
     }
 
-    // Razorpay issues
-    if (componentTests.razorpay.status === 'fail') {
-      recommendations.push('Fix Razorpay script loading - disable ad blockers');
+    // Cashfree issues
+    if (componentTests.cashfree.status === 'fail') {
+      recommendations.push('Fix Cashfree SDK loading - disable ad blockers');
     }
 
     // Add specific solutions from analysis

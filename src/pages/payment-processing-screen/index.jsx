@@ -3,11 +3,10 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { teamService } from '../../services/teamService';
 import { paymentService } from '../../services/paymentService';
-import razorpayService from '../../services/razorpayService';
+import { cashfreeService } from '../../services/cashfreeService';
 import { quickDiagnostic } from '../../utils/quickPaymentDiagnostic';
 import paymentFailureAnalyzer from '../../utils/paymentFailureAnalyzer';
 import paymentDebugger from '../../utils/paymentDebugger';
-import razorpayConfigValidator from '../../utils/razorpayConfigValidator';
 import teamDataDebugger from '../../utils/teamDataDebugger';
 import eventAssociationFixer from '../../utils/eventAssociationFixer';
 import Header from '../../components/ui/Header';
@@ -234,9 +233,9 @@ const PaymentProcessingScreen = () => {
     }
   };
 
-  // Initialize Razorpay on component mount
+  // Initialize Cashfree on component mount
   useEffect(() => {
-    razorpayService.initializeRazorpay();
+    cashfreeService.initializeCashfree();
 
     // Make diagnostic available globally for console access
     window.quickPaymentDiagnostic = quickDiagnostic;
@@ -398,7 +397,7 @@ const PaymentProcessingScreen = () => {
 
       console.log('📝 Creating order with data:', orderData);
 
-      const { order, payment, error: orderError } = await razorpayService.createOrder(orderData);
+      const { order, payment, error: orderError } = await cashfreeService.createOrder(orderData);
 
       if (orderError) {
         console.error('❌ Order creation failed:', orderError);
@@ -432,52 +431,46 @@ const PaymentProcessingScreen = () => {
 
       console.log('✅ Order created successfully:', order.id);
 
-      // Razorpay payment options
-      const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
+      // Cashfree payment configuration
+      const cashfreeAppId = import.meta.env.VITE_CASHFREE_APP_ID;
+      const cashfreeEnv = import.meta.env.VITE_CASHFREE_ENV || 'TEST';
 
-      if (!razorpayKey) {
-        console.error('❌ VITE_RAZORPAY_KEY_ID not found in environment');
-        handlePaymentFailure('Razorpay configuration error');
+      if (!cashfreeAppId) {
+        console.error('❌ VITE_CASHFREE_APP_ID not found in environment');
+        handlePaymentFailure('Cashfree configuration error');
         return;
       }
 
-      if (!razorpayKey.startsWith('rzp_test_') && !razorpayKey.startsWith('rzp_live_')) {
-        console.error('❌ Invalid Razorpay key format:', razorpayKey);
-        handlePaymentFailure('Invalid Razorpay key format');
-        return;
-      }
+      console.log('✅ Using Cashfree App ID:', cashfreeAppId.substring(0, 8) + '...');
+      console.log('✅ Cashfree Environment:', cashfreeEnv);
 
-      console.log('✅ Using Razorpay key:', razorpayKey.substring(0, 12) + '...');
-
-      const options = {
-        key: razorpayKey,
-        amount: order.amount,
-        currency: order.currency,
-        name: 'HackFest Portal',
-        description: `Team Registration - ${teamData?.teamName}`,
-        image: '/favicon.ico',
-        order_id: order.id,
-        prefill: {
-          name: teamData?.leaderName,
-          email: teamData?.leaderEmail,
-          contact: teamData?.leaderPhone
-        },
-        notes: {
-          team_name: teamData?.teamName,
-          member_count: memberCount,
-          problem_statement: teamData?.problemStatement,
-          event_name: teamData?.eventName
-        },
-        theme: {
-          color: '#00F5FF'
+      // Create payment session for Cashfree
+      const { session, error: sessionError } = await cashfreeService.createPaymentSession({
+        order_id: order.order_id,
+        customer_details: {
+          customer_id: teamData?.userId || 'guest',
+          customer_name: teamData?.leaderName || 'HackFest Participant',
+          customer_email: teamData?.leaderEmail || 'participant@hackfest.com',
+          customer_phone: teamData?.leaderPhone || '9999999999'
         }
+      });
+
+      if (sessionError) {
+        console.error('❌ Payment session creation failed:', sessionError);
+        handlePaymentFailure('Failed to create payment session');
+        return;
+      }
+
+      const paymentOptions = {
+        payment_session_id: session.payment_session_id,
+        return_url: `${window.location.origin}/payment-success?order_id=${order.order_id}`
       };
 
-      console.log('💳 Razorpay options:', { ...options, key: options.key.substring(0, 12) + '...' });
+      console.log('💳 Cashfree payment options:', paymentOptions);
 
-      // Process payment through Razorpay
-      console.log('🚀 Processing payment through Razorpay...');
-      const paymentResult = await razorpayService.processPayment(options);
+      // Process payment through Cashfree
+      console.log('🚀 Processing payment through Cashfree...');
+      const paymentResult = await cashfreeService.processPayment(paymentOptions);
 
       console.log('💳 Payment result:', paymentResult);
 
@@ -485,7 +478,7 @@ const PaymentProcessingScreen = () => {
         console.log('✅ Payment successful, verifying...');
 
         // Verify payment and update database
-        const verificationResult = await razorpayService.verifyPayment({
+        const verificationResult = await cashfreeService.verifyPayment({
           paymentId: paymentResult.paymentId,
           orderId: paymentResult.orderId,
           signature: paymentResult.signature
@@ -555,8 +548,8 @@ const PaymentProcessingScreen = () => {
 
   const handlePaymentSuccess = async (response) => {
     setIsProcessing(false);
-    setTransactionId(response?.razorpay_payment_id);
-    setReceiptUrl(`/receipts/${response?.razorpay_payment_id}.pdf`);
+    setTransactionId(response?.paymentId || response?.cf_payment_id);
+    setReceiptUrl(`/receipts/${response?.paymentId || response?.cf_payment_id}.pdf`);
     setPaymentStatus('success');
     setShowStatusModal(true);
 
@@ -847,24 +840,29 @@ const PaymentProcessingScreen = () => {
                 ⚡ Quick Fixes
               </Button>
 
-              {/* Razorpay Config Validator */}
+              {/* Cashfree Config Validator */}
               <Button
                 variant="outline"
                 size="sm"
                 fullWidth
                 onClick={async () => {
-                  console.log('\n🔍 VALIDATING RAZORPAY CONFIGURATION...\n');
+                  console.log('\n🔍 VALIDATING CASHFREE CONFIGURATION...\n');
                   try {
-                    const validation = await razorpayConfigValidator.validateConfiguration();
+                    const appId = import.meta.env.VITE_CASHFREE_APP_ID;
+                    const env = import.meta.env.VITE_CASHFREE_ENV;
 
-                    const criticalIssues = validation.issues.filter(issue =>
-                      issue.includes('fail') || issue.includes('SECURITY RISK')
-                    );
+                    console.log('Cashfree App ID:', appId ? appId.substring(0, 8) + '...' : 'Not configured');
+                    console.log('Cashfree Environment:', env || 'Not configured');
 
-                    if (criticalIssues.length === 0) {
-                      alert('✅ Razorpay configuration looks good!\n\nCheck console for detailed validation results.\n\nIf payments still fail, the issue is likely with authentication, team data, or database permissions.');
+                    const sdkLoaded = await cashfreeService.initializeCashfree();
+                    console.log('Cashfree SDK loaded:', sdkLoaded);
+
+                    if (!appId) {
+                      alert('❌ Cashfree App ID not configured!\n\nPlease set VITE_CASHFREE_APP_ID in environment variables.');
+                    } else if (!sdkLoaded) {
+                      alert('❌ Cashfree SDK failed to load!\n\nCheck network connection and try again.');
                     } else {
-                      alert(`❌ Razorpay configuration issues found:\n\n${criticalIssues.join('\n')}\n\nCheck console for detailed validation and recommendations.`);
+                      alert('✅ Cashfree configuration looks good!\n\nCheck console for detailed validation results.');
                     }
                   } catch (error) {
                     console.error('Validation failed:', error);
@@ -874,7 +872,7 @@ const PaymentProcessingScreen = () => {
                 iconName="Shield"
                 iconPosition="left"
               >
-                🔒 Validate Razorpay Config
+                🔒 Validate Cashfree Config
               </Button>
 
               {/* Team Data Verifier */}
